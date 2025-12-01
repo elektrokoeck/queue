@@ -472,11 +472,12 @@ class QueueJobRunner:
         return runner
 
     def get_db_names(self):
-        if config["db_name"]:
-            db_names = config["db_name"].split(",")
-        else:
-            db_names = odoo.service.db.list_dbs(True)
-        return db_names
+        db_name_opt = config["db_name"]
+        if db_name_opt:
+            if isinstance(db_name_opt, (list, tuple, set)):
+                return list(db_name_opt)
+            return [n for n in str(db_name_opt).split(",") if n]
+        return odoo.service.db.list_dbs(True)
 
     def close_databases(self, remove_jobs=True):
         for db_name, db in self.db_by_name.items():
