@@ -43,6 +43,23 @@ class QueueJob(models.Model):
         row = self.env.cr.fetchone()
         return self.browse(row and row[0])
 
+    @api.model
+    def _count_pending_jobs(self) -> int:
+        """Count pending jobs ready to be processed."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            """
+            SELECT COUNT(*)
+            FROM queue_job
+            WHERE state = 'pending'
+            AND (eta IS NULL OR eta <= (now() AT TIME ZONE 'UTC'))
+            """
+        )
+        row = self.env.cr.fetchone()
+        if not row:
+            return 0
+        return row[0]
+
     def _process(self, commit=False):
         """Process the job"""
         self.ensure_one()
@@ -100,18 +117,33 @@ class QueueJob(models.Model):
     @api.model
     def _job_runner(self, commit=True):
         """Short-lived job runner, triggered by async crons"""
+        is_cron = bool(self.env.context.get("cron_id"))
+        time_left = float("inf")
+
+        if is_cron:
+            remaining = self._count_pending_jobs()
+            time_left = self.env["ir.cron"]._commit_progress(remaining=remaining)
+
         job = self._acquire_one_job()
-        while job:
+        if not job:
+            if is_cron:
+                self.env["ir.cron"]._commit_progress(remaining=0)
+            return
+
+        while time_left > 0 and job:
             job._process(commit=commit)
+
+            if is_cron:
+                remaining = self._count_pending_jobs()
+                time_left = self.env["ir.cron"]._commit_progress(
+                    processed=1,
+                    remaining=remaining,
+                )
+                if time_left <= 0:
+                    break
+
             job = self._acquire_one_job()
-            # TODO: If limit_time_real_cron is reached before all the jobs are done,
-            #       the worker will be killed abruptly.
-            #       Ideally, find a way to know if we're close to reaching this limit,
-            #       stop processing, and trigger a new execution to continue.
-            #
-            # if job and limit_time_real_cron_reached_or_about_to_reach:
-            #     self._cron_trigger()
-            #     break
+
 
     @api.model
     def _cron_trigger(self, at=None):
