@@ -36,10 +36,9 @@ class TestJobsOnTestingMethod(JobCommonCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        User = cls.env["res.users"]
         main_company = cls.env.ref("base.main_company")
         group_user = cls.env.ref("base.group_user")
-        cls.demo_user = User.create(
+        cls.demo_user = cls.env["res.users"].create(
             {
                 "name": "Demo User (Queue)",
                 "login": "queue_demo_user_3",
@@ -407,10 +406,9 @@ class TestJobs(JobCommonCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        User = cls.env["res.users"]
         main_company = cls.env.ref("base.main_company")
         group_user = cls.env.ref("base.group_user")
-        cls.demo_user = User.create(
+        cls.demo_user = cls.env["res.users"].create(
             {
                 "name": "Demo User (Queue)",
                 "login": "queue_demo_user_4",

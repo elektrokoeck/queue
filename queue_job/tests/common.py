@@ -95,7 +95,6 @@ def trap_jobs():
     with mock.patch(
         "odoo.addons.queue_job.delay.Job",
         name="Job Class",
-        auto_spec=True,
         unsafe=True,
     ) as job_cls_mock:
         with JobsTrap(job_cls_mock) as trap:
@@ -275,7 +274,7 @@ class JobsTrap:
 
     def _prepare_context(self, job):
         # pylint: disable=context-overridden
-        job_model = job.job_model.with_context({})
+        job_model = job.env["queue.job"].with_context({})
         field_records = job_model._fields["records"]
         # Filter the context to simulate store/load of the job
         job.recordset = field_records.convert_to_write(job.recordset, job_model)
@@ -298,13 +297,14 @@ class JobsTrap:
 
     def _format_job_call(self, call):
         # Build method argument string (positional and keyword) separately
-        args_str = ", ".join(f"{arg}" for arg in call.args) if call.args else ""
-        kwargs_str = (
-            ", ".join(f"{key}={value}" for key, value in call.kwargs.items())
-            if call.kwargs
-            else ""
-        )
-        method_args = ", ".join(s for s in (args_str, kwargs_str) if s)
+        method_args_parts = []
+        if call.args:
+            method_args_parts.append(", ".join(f"{arg}" for arg in call.args))
+        if call.kwargs:
+            method_args_parts.append(
+                ", ".join(f"{key}={value}" for key, value in call.kwargs.items())
+            )
+        method_args = ", ".join(method_args_parts)
 
         # Build properties string
         props_str = ", ".join(
