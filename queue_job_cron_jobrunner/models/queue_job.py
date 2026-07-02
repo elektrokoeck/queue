@@ -14,6 +14,7 @@ from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 from odoo.addons.queue_job.controllers.main import PG_RETRY
 from odoo.addons.queue_job.exception import FailedJobError, RetryableJobError
 from odoo.addons.queue_job.job import Job
+from odoo.addons.base.models.ir_cron import MIN_TIME_PER_JOB
 
 _logger = logging.getLogger(__name__)
 
@@ -118,11 +119,24 @@ class QueueJob(models.Model):
     def _job_runner(self, commit=True):
         """Short-lived job runner, triggered by async crons"""
         is_cron = bool(self.env.context.get("cron_id"))
+        cron_end_time = self.env.context.get("cron_end_time")
+        total_done = 0
+        if cron_end_time:
+            ICP = self.env["ir.config_parameter"].sudo()
+            param = ICP.get_param("queue_job_cron_jobrunner.cron_time_limit", default="0")
+            try:
+                time_limit = float(param)
+                extra_time = time_limit - MIN_TIME_PER_JOB if time_limit > MIN_TIME_PER_JOB else 0
+                self = self.with_context(cron_end_time=cron_end_time + extra_time)
+            except ValueError:
+                pass
+
         time_left = float("inf")
 
         if is_cron:
             remaining = self._count_pending_jobs()
             time_left = self.env["ir.cron"]._commit_progress(remaining=remaining)
+            _logger.debug("Job runner started, remaining=%s, time_left=%s", remaining, time_left)
 
         job = self._acquire_one_job()
         if not job:
@@ -135,10 +149,12 @@ class QueueJob(models.Model):
 
             if is_cron:
                 remaining = self._count_pending_jobs()
+                total_done += 1
                 time_left = self.env["ir.cron"]._commit_progress(
                     processed=1,
                     remaining=remaining,
                 )
+                _logger.debug("Job runner processed one job, total_done=%s, remaining=%s, time_left=%s", total_done, remaining, time_left)
                 if time_left <= 0:
                     break
 
